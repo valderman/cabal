@@ -33,7 +33,7 @@ import Distribution.Client.HttpUtils
 import Distribution.Package
          ( PackageId, packageName, packageVersion )
 import Distribution.Simple.Utils
-         ( notice, info, setupMessage )
+         ( notice, info, setupMessage, copyFileVerbose )
 import Distribution.Text
          ( display )
 import Distribution.Verbosity
@@ -50,6 +50,9 @@ import qualified System.FilePath.Posix as FilePath.Posix
          ( combine, joinPath )
 import Network.URI
          ( URI(uriPath) )
+
+import qualified Hackage.Security.Client    as Sec
+import qualified Hackage.Security.Util.Path as Sec
 
 -- ------------------------------------------------------------
 -- * Actually fetch things
@@ -131,16 +134,24 @@ fetchRepoTarball transport verbosity repo pkgid = do
     else do setupMessage verbosity "Downloading" pkgid
             downloadRepoPackage
   where
-    downloadRepoPackage = case repoKind repo of
-      Right LocalRepo -> return (packageFile repo pkgid)
+    downloadRepoPackage = case repo of
+      RepoLocal _localDir -> return (packageFile repo pkgid)
 
-      Left remoteRepo -> do
+      RepoRemote remoteRepo _localDir -> do
         remoteRepoCheckHttps transport remoteRepo
         let uri  = packageURI remoteRepo pkgid
             dir  = packageDir       repo pkgid
             path = packageFile      repo pkgid
         createDirectoryIfMissing True dir
         _ <- downloadURI transport verbosity uri path
+        return path
+
+      RepoSecure _ _ rep -> do
+        let dir  = packageDir  repo pkgid
+            path = packageFile repo pkgid
+        createDirectoryIfMissing True dir
+        Sec.downloadPackage rep pkgid $ \tempPath ->
+          copyFileVerbose verbosity (Sec.toFilePath tempPath) path
         return path
 
 -- | Downloads an index file to [config-dir/packages/serv-id].

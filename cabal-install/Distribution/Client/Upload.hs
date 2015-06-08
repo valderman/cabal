@@ -3,7 +3,8 @@
 
 module Distribution.Client.Upload (check, upload, report) where
 
-import Distribution.Client.Types (Username(..), Password(..),Repo(..),RemoteRepo(..))
+import Distribution.Client.Types
+         ( Username(..), Password(..),Repo(..),RemoteRepo(..), repoRemote' )
 import Distribution.Client.HttpUtils
          ( isOldHackageURI, HttpTransport(..), remoteRepoTryUpgradeToHttps )
 
@@ -23,6 +24,7 @@ import System.FilePath  ((</>), takeExtension)
 import qualified System.FilePath.Posix as FilePath.Posix ((</>))
 import System.Directory
 import Control.Monad (forM_, when)
+import Data.Maybe (catMaybes)
 
 type Auth = Maybe (String, String)
 
@@ -37,7 +39,7 @@ Just checkURI = parseURI "http://hackage.haskell.org/cgi-bin/hackage-scripts/che
 upload :: HttpTransport -> Verbosity -> [Repo] -> Maybe Username -> Maybe Password -> [FilePath] -> IO ()
 upload transport verbosity repos mUsername mPassword paths = do
     targetRepo <-
-      case [ remoteRepo | Left remoteRepo <- map repoKind repos ] of
+      case [ remoteRepo | Just remoteRepo <- map repoRemote' repos ] of
         [] -> die $ "Cannot upload. No remote repositories are configured."
         rs -> remoteRepoTryUpgradeToHttps transport (last rs)
     let targetRepoURI = remoteRepoURI targetRepo
@@ -76,9 +78,9 @@ report :: Verbosity -> [Repo] -> Maybe Username -> Maybe Password -> IO ()
 report verbosity repos mUsername mPassword = do
       Username username <- maybe promptUsername return mUsername
       Password password <- maybe promptPassword return mPassword
-      let auth = (username,password)
-      forM_ repos $ \repo -> case repoKind repo of
-        Left remoteRepo
+      let auth = (username, password)
+      let remoteRepos = catMaybes (map repoRemote' repos)
+      forM_ remoteRepos $ \remoteRepo
             -> do dotCabal <- defaultCabalDir
                   let srcDir = dotCabal </> "reports" </> remoteRepoName remoteRepo
                   -- We don't want to bomb out just because we haven't built any packages from this repo yet
@@ -94,7 +96,6 @@ report verbosity repos mUsername mPassword = do
                                  do info verbosity $ "Uploading report for " ++ display (BuildReport.package report')
                                     BuildReport.uploadReports verbosity auth (remoteRepoURI remoteRepo) [(report', Just buildLog)]
                                     return ()
-        Right{} -> return ()
 
 check :: HttpTransport -> Verbosity -> [FilePath] -> IO ()
 check transport verbosity paths = do
@@ -111,4 +112,3 @@ handlePackage transport verbosity uri auth path =
        (code,err)  -> do notice verbosity $ "Error uploading " ++ path ++ ": "
                                      ++ "http code " ++ show code ++ "\n"
                                      ++ err
-

@@ -43,6 +43,8 @@ import Data.ByteString.Lazy (ByteString)
 import Control.Exception
          ( SomeException )
 
+import qualified Hackage.Security.Client as Sec
+
 newtype Username = Username { unUsername :: String }
 newtype Password = Password { unPassword :: String }
 
@@ -232,14 +234,20 @@ data PackageLocation local =
 --  | ScmPackage
   deriving (Show, Functor)
 
-data LocalRepo = LocalRepo
-  deriving (Show,Eq)
-
 data RemoteRepo =
     RemoteRepo {
       remoteRepoName     :: String,
       remoteRepoURI      :: URI,
-      remoteRepoRootKeys :: (),
+
+      -- | Should we treat this as a secure repo?
+      -- If false, we will treat this as a "legacy" non-secure repo.
+      remoteRepoSecure :: Bool,
+
+      -- | Root keys (for bootstrapping)
+      remoteRepoRootKeys :: [Sec.KeyId],
+
+      -- | Threshold for verification during bootstrapping
+      remoteRepoKeyThreshold :: Int,
 
       -- | Normally a repo just specifies an HTTP or HTTPS URI, but as a
       -- special case we may know a repo supports both and want to try HTTPS
@@ -256,13 +264,45 @@ data RemoteRepo =
 
 -- | Construct a partial 'RemoteRepo' value to fold the field parser list over.
 emptyRemoteRepo :: String -> RemoteRepo
-emptyRemoteRepo name = RemoteRepo name nullURI () False
+emptyRemoteRepo name = RemoteRepo name nullURI False [] 0 False
 
-data Repo = Repo {
-    repoKind     :: Either RemoteRepo LocalRepo,
-    repoLocalDir :: FilePath
-  }
-  deriving (Show,Eq)
+data Repo =
+    -- | Local repositories
+    RepoLocal {
+        repoLocalDir :: FilePath
+      }
+
+    -- | Legacy (unsecured) remote repositores
+  | RepoRemote {
+        repoRemote   :: RemoteRepo
+      , repoLocalDir :: FilePath
+      }
+
+    -- | Secure repositories
+    --
+    -- We still provide the RemoteRepo abstraction here as well; this is used
+    -- for instance for uploads. repoLocalDir is used for functions that
+    -- access cached files directly (for instance, that read the index).
+    --
+    -- TODO: Eventually RemoteRepo should go here.
+    -- TODO: If _all_ access to cached files goes through hackage-security then
+    --       repoLocalDir here can go too (though we need to make sure that
+    --       we don't call repoLocalDir on a Repo anywhere in the code, leading
+    --       to 'No match in record selector' runtime errors).
+  | RepoSecure {
+        repoRemote   :: RemoteRepo
+      , repoLocalDir :: FilePath
+      , repoSecure   :: Sec.Repository
+      }
+  deriving Show
+
+-- | Check if this is a (legacy or secure) remote repo
+--
+-- See comments for 'RepoSecure'.
+repoRemote' :: Repo -> Maybe RemoteRepo
+repoRemote' (RepoLocal    _localDir  ) = Nothing
+repoRemote' (RepoRemote r _localDir  ) = Just r
+repoRemote' (RepoSecure r _localDir _) = Just r
 
 -- ------------------------------------------------------------
 -- * Build results

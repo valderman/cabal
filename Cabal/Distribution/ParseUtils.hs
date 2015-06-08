@@ -35,7 +35,7 @@ module Distribution.ParseUtils (
         showFilePath, showToken, showTestedWith, showFreeText, parseFreeText,
         field, simpleField, listField, listFieldWithSep, spaceListField,
         commaListField, commaListFieldWithSep, commaNewLineListField,
-        optsField, liftField, boolField, parseQuoted, indentWith,
+        optsField, liftField, boolField, intField, parseQuoted, indentWith,
 
         UnrecFieldParser, warnUnrec, ignoreUnrec,
   ) where
@@ -265,6 +265,12 @@ boolField name get set = liftField get set (FieldDescr name showF readF)
         lstr = lowercase str
         caseWarning = PWarning $
           "The '" ++ name ++ "' field is case sensitive, use 'True' or 'False'."
+
+intField :: String -> (b -> Int) -> (Int -> b -> b) -> FieldDescr b
+intField name get set = simpleField name (text . show) parseInt get set
+    where
+      parseInt :: ReadP a Int
+      parseInt = read `fmap` munch isDigit
 
 ppFields :: [FieldDescr a] -> a -> Doc
 ppFields fields x =

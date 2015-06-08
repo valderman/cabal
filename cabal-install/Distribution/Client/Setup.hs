@@ -1,4 +1,6 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Distribution.Client.Setup
@@ -12,7 +14,7 @@
 --
 -----------------------------------------------------------------------------
 module Distribution.Client.Setup
-    ( globalCommand, GlobalFlags(..), defaultGlobalFlags, globalRepos
+    ( globalCommand, GlobalFlags(..), defaultGlobalFlags, withGlobalRepos
     , configureCommand, ConfigFlags(..), filterConfigureFlags
     , configureExCommand, ConfigExFlags(..), defaultConfigExFlags
                         , configureExOptions
@@ -48,7 +50,7 @@ module Distribution.Client.Setup
     ) where
 
 import Distribution.Client.Types
-         ( Username(..), Password(..), Repo(..), RemoteRepo(..), LocalRepo(..) )
+         ( Username(..), Password(..), Repo(..), RemoteRepo(..) )
 import Distribution.Client.BuildReports.Types
          ( ReportLevel(..) )
 import Distribution.Client.Dependency.Types
@@ -91,7 +93,7 @@ import qualified Distribution.Compat.ReadP as Parse
 import Distribution.Verbosity
          ( Verbosity, normal )
 import Distribution.Simple.Utils
-         ( wrapText, wrapLine )
+         ( wrapText, wrapLine, debug, warn, notice )
 
 import Data.Char
          ( isSpace, isAlphaNum )
@@ -104,11 +106,19 @@ import Data.Monoid
          ( Monoid(..) )
 #endif
 import Control.Monad
-         ( liftM )
+         ( liftM, when )
 import System.FilePath
          ( (</>) )
 import Network.URI
-         ( parseAbsoluteURI, uriToString )
+         ( URI, parseAbsoluteURI, uriToString, uriScheme, uriPath )
+
+import qualified Hackage.Security.Client                        as Sec
+import qualified Hackage.Security.Util.Path                     as Sec
+import qualified Hackage.Security.Util.Pretty                   as Sec
+import qualified Hackage.Security.Client.Repository.Cache       as Sec.Cache
+import qualified Hackage.Security.Client.Repository.Local       as Sec.Local
+import qualified Hackage.Security.Client.Repository.Remote      as Sec.Remote
+import qualified Hackage.Security.Client.Repository.Remote.HTTP as Sec.HTTP
 
 -- ------------------------------------------------------------
 -- * Global flags
@@ -120,14 +130,19 @@ data GlobalFlags = GlobalFlags {
     globalNumericVersion    :: Flag Bool,
     globalConfigFile        :: Flag FilePath,
     globalSandboxConfigFile :: Flag FilePath,
-    globalRemoteRepos       :: NubList RemoteRepo,     -- ^ Available Hackage servers.
+
+    -- | Available Hackage servers
+    globalRemoteRepos       :: NubList RemoteRepo,
     globalCacheDir          :: Flag FilePath,
     globalLocalRepos        :: NubList FilePath,
     globalLogsDir           :: Flag FilePath,
     globalWorldFile         :: Flag FilePath,
     globalRequireSandbox    :: Flag Bool,
     globalIgnoreSandbox     :: Flag Bool,
-    globalHttpTransport     :: Flag String
+    globalHttpTransport     :: Flag String,
+
+    -- | Ignore expiry dates on signed metadata
+    globalIgnoreExpiry      :: Flag Bool
   }
 
 defaultGlobalFlags :: GlobalFlags
@@ -143,7 +158,8 @@ defaultGlobalFlags  = GlobalFlags {
     globalWorldFile         = mempty,
     globalRequireSandbox    = Flag False,
     globalIgnoreSandbox     = Flag False,
-    globalHttpTransport     = mempty
+    globalHttpTransport     = mempty,
+    globalIgnoreExpiry      = Flag False
   }
 
 globalCommand :: [Command action] -> CommandUI GlobalFlags
@@ -262,7 +278,9 @@ globalCommand commands = CommandUI {
     commandNotes = Nothing,
     commandDefaultFlags = mempty,
     commandOptions      = \showOrParseArgs ->
-      (case showOrParseArgs of ShowArgs -> take 7; ParseArgs -> id)
+      -- TAKE NOTE! If you add a new argument, change this "take .." expression
+      -- to make sure it is included in the help.
+      (case showOrParseArgs of ShowArgs -> take 8; ParseArgs -> id)
       [option ['V'] ["version"]
          "Print version information"
          globalVersion (\v flags -> flags { globalVersion = v })
@@ -297,6 +315,11 @@ globalCommand commands = CommandUI {
          "Set a transport for http(s) requests. Accepts 'curl', 'wget', 'powershell', and 'plain-http'. (default: 'curl')"
          globalConfigFile (\v flags -> flags { globalHttpTransport = v })
          (reqArgFlag "HttpTransport")
+
+      ,option [] ["ignore-expiry"]
+         "Ignore expiry dates on signed metadata (use only in exception circumstances)"
+         globalIgnoreExpiry (\v flags -> flags { globalIgnoreExpiry = v })
+         trueArg
 
       ,option [] ["remote-repo"]
          "The name and url for a remote repository"
@@ -338,7 +361,8 @@ instance Monoid GlobalFlags where
     globalWorldFile         = mempty,
     globalRequireSandbox    = mempty,
     globalIgnoreSandbox     = mempty,
-    globalHttpTransport     = mempty
+    globalHttpTransport     = mempty,
+    globalIgnoreExpiry      = mempty
   }
   mappend a b = GlobalFlags {
     globalVersion           = combine globalVersion,
@@ -352,21 +376,104 @@ instance Monoid GlobalFlags where
     globalWorldFile         = combine globalWorldFile,
     globalRequireSandbox    = combine globalRequireSandbox,
     globalIgnoreSandbox     = combine globalIgnoreSandbox,
-    globalHttpTransport     = combine globalHttpTransport
+    globalHttpTransport     = combine globalHttpTransport,
+    globalIgnoreExpiry      = combine globalIgnoreExpiry
   }
     where combine field = field a `mappend` field b
 
-globalRepos :: GlobalFlags -> [Repo]
-globalRepos globalFlags = remoteRepos ++ localRepos
+-- | Construct all repositories
+--
+-- We construct what cabal knows as "local" repositories like we always have,
+-- but for "remote" repositories we look at the URI specified. If it happens
+-- to be a @file:@ URI (e.g., @file:/path/to/local/repo@ we construct a
+-- secure Local repository (local in the sense of hackage-security; as far
+-- as cabal is concerned this is still a 'remote' repository), otherwise we
+-- construct a secure Remote repository.
+--
+-- For remote repositories with a key threshold of 0 we construct a legacy
+-- cabal remote repository.
+withGlobalRepos :: forall a. Verbosity -> GlobalFlags -> ([Repo] -> IO a) -> IO a
+withGlobalRepos verbosity GlobalFlags{..} = \callback ->
+    goRemote (fromNubList globalRemoteRepos) $ \remoteRepos ->
+      callback (remoteRepos ++ localRepos)
   where
-    remoteRepos =
-      [ Repo (Left remote) cacheDir
-      | remote <- fromNubList $ globalRemoteRepos globalFlags
-      , let cacheDir = fromFlag (globalCacheDir globalFlags)
-                   </> remoteRepoName remote ]
-    localRepos =
-      [ Repo (Right LocalRepo) local
-      | local <- fromNubList $ globalLocalRepos globalFlags ]
+    -- Construct remote repositories
+    goRemote :: [RemoteRepo] -> ([Repo] -> IO a) -> IO a
+    goRemote remoteRepos callback = go [] remoteRepos
+      where
+        go :: [Repo] -> [RemoteRepo] -> IO a
+        go acc []     = callback acc
+        go acc (r:rs) | not (remoteRepoSecure r) =
+            go (RepoRemote r (cacheDir r):acc) rs
+        go acc (r:rs) = do
+            cachePath <- Sec.makeAbsolute $ Sec.fromFilePath (cacheDir r)
+            withRepo cachePath uri $ \rep -> do
+              requiresBootstrap <- Sec.requiresBootstrap rep
+              when requiresBootstrap $
+                Sec.bootstrap rep rootKeys (Sec.KeyThreshold threshold)
+              let repo = RepoSecure r (cacheDir r) rep
+              go (repo:acc) rs
+          where
+            uri       = remoteRepoURI          r
+            rootKeys  = remoteRepoRootKeys     r
+            threshold = remoteRepoKeyThreshold r
+
+    -- Construct local repositories
+    localRepos :: [Repo]
+    localRepos = map RepoLocal (fromNubList globalLocalRepos)
+
+    -- Call withLocalRepo if uriScheme is @file:@ or withRepoteRepo otherwise
+    withRepo :: Sec.AbsolutePath
+             -> URI
+             -> (Sec.Repository -> IO a)
+             -> IO a
+    withRepo cachePath uri callback =
+      if uriScheme uri == "file:"
+        then do dir <- Sec.makeAbsolute $ Sec.fromFilePath (uriPath uri)
+                withLocalRepo  cachePath dir callback
+        else do withRemoteRepo cachePath uri callback
+
+    withRemoteRepo :: Sec.AbsolutePath
+                   -> URI
+                   -> (Sec.Repository -> IO a)
+                   -> IO a
+    withRemoteRepo cachePath uri callback = withClient $ \httpClient ->
+      Sec.Remote.withRepository httpClient
+                                [uri]
+                                (cache cachePath)
+                                Sec.hackageRepoLayout
+                                logTUF
+                                callback
+
+    withLocalRepo :: Sec.AbsolutePath
+                  -> Sec.AbsolutePath
+                  -> (Sec.Repository -> IO a)
+                  -> IO a
+    withLocalRepo cachePath dir =
+      Sec.Local.withRepository dir
+                               (cache cachePath)
+                               Sec.hackageRepoLayout
+                               logTUF
+
+    withClient :: (Sec.Remote.HttpClient -> IO a) -> IO a
+    withClient = Sec.HTTP.withClient logOut logErr
+      where
+        logOut = debug verbosity
+        logErr = warn verbosity . ("http error: "++)
+
+    cache :: Sec.AbsolutePath -> Sec.Cache.Cache
+    cache cachePath = Sec.Cache.Cache {
+          cacheRoot   = cachePath
+        , cacheLayout = Sec.cabalCacheLayout
+        }
+
+    -- TODO: Right now we are showing all TUF messages at verbosity level
+    -- normal. We will want tweak this.
+    logTUF :: Sec.LogMessage -> IO ()
+    logTUF = notice verbosity . Sec.pretty
+
+    cacheDir :: RemoteRepo -> FilePath
+    cacheDir r = fromFlag globalCacheDir </> remoteRepoName r
 
 -- ------------------------------------------------------------
 -- * Config flags
@@ -2270,7 +2377,9 @@ parseRepo = do
   return RemoteRepo {
     remoteRepoName           = name,
     remoteRepoURI            = uri,
-    remoteRepoRootKeys       = (),
+    remoteRepoSecure         = False,
+    remoteRepoRootKeys       = [],
+    remoteRepoKeyThreshold   = 0,
     remoteRepoShouldTryHttps = False
   }
 

@@ -141,7 +141,9 @@ executable cabal
         random     >= 1        && < 1.2,
         stm        >= 2.0      && < 3,
         time       >= 1.1      && < 1.6,
-        zlib       >= 0.5.3    && < 0.7
+        zlib       >= 0.5.3    && < 0.7,
+        hackage-security,
+        hackage-security-HTTP
 
     if flag(old-directory)
       build-depends: directory >= 1 && < 1.2, old-time >= 1 && < 1.2,
@@ -202,6 +204,8 @@ Test-Suite unit-tests
         HTTP,
         zlib,
         random,
+        hackage-security,
+        hackage-security-HTTP,
         tasty,
         tasty-hunit,
         tasty-quickcheck,

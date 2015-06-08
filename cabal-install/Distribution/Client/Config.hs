@@ -70,7 +70,7 @@ import Distribution.ParseUtils
          , ParseResult(..), PError(..), PWarning(..)
          , locatedErrorMsg, showPWarning
          , readFields, warning, lineNo
-         , simpleField, listField, spaceListField
+         , simpleField, listField, boolField, intField, spaceListField
          , parseFilePathQ, parseTokenQ )
 import Distribution.Client.ParseUtils
          ( parseFields, ppFields, ppSection )
@@ -131,6 +131,8 @@ import Data.Function
          ( on )
 import Data.List
          ( nubBy )
+
+import qualified Hackage.Security.Client as Sec
 
 --
 -- * Configuration saved in the config file
@@ -220,7 +222,8 @@ instance Monoid SavedConfig where
         globalWorldFile         = combine globalWorldFile,
         globalRequireSandbox    = combine globalRequireSandbox,
         globalIgnoreSandbox     = combine globalIgnoreSandbox,
-        globalHttpTransport     = combine globalHttpTransport
+        globalHttpTransport     = combine globalHttpTransport,
+        globalIgnoreExpiry      = combine globalIgnoreExpiry
         }
         where
           combine        = combine'        savedGlobalFlags
@@ -477,7 +480,7 @@ defaultUserInstall = True
 -- global installs on Windows but that no longer works on Windows Vista or 7.
 
 defaultRemoteRepo :: RemoteRepo
-defaultRemoteRepo = RemoteRepo name uri () False
+defaultRemoteRepo = RemoteRepo name uri False [] 0 False
   where
     name = "hackage.haskell.org"
     uri  = URI "http:" (Just (URIAuth "" name "")) "/" "" ""
@@ -499,11 +502,28 @@ defaultRemoteRepo = RemoteRepo name uri () False
 --
 addInfoForKnownRepos :: RemoteRepo -> RemoteRepo
 addInfoForKnownRepos repo@RemoteRepo{ remoteRepoName = "hackage.haskell.org" } =
-    repo {
-      --remoteRepoRootKeys --TODO: when this list is empty, fill in known crypto credentials
-      remoteRepoShouldTryHttps = True
-    }
+      tryHttps
+    . addCredentials
+    $ repo
+  where
+    tryHttps       r = r { remoteRepoShouldTryHttps = True }
+    addCredentials r = if null (remoteRepoRootKeys r)
+                         then r { remoteRepoRootKeys     = hackageRootKeys
+                                , remoteRepoKeyThreshold = 2
+                                , remoteRepoSecure       = True
+                                }
+                         else r
 addInfoForKnownRepos other = other
+
+-- | The IDs of the Hackage root keys
+--
+-- TODO: Should should be modified with the real root keys once they exist
+hackageRootKeys :: [Sec.KeyId]
+hackageRootKeys = [
+      Sec.KeyId "2ae741f4c4a5f70ed6e6c48762e0d7a493d8dd265e9cbc6c4037dfc7ceaec70e"
+    , Sec.KeyId "32d3db5b4403935c0baf52a2bcb05031784a971ee2d43587288776f2e90609db"
+    , Sec.KeyId "eed36d2bb15f94628221cde558e99c4e1ad36fd243fe3748e1ee7ad00eb9d628"
+    ]
 
 --
 -- * Config file reading
@@ -833,6 +853,7 @@ parseConfig initial = \str -> do
       r' <- parseFields remoteRepoFields (emptyRemoteRepo name) fs
       return (r':rs, h, u, g, p, a)
 
+    -- Parse legacy 'remote-repo' field
     parseSections (rs, h, u, g, p, a)
                  (ParseUtils.F lno "remote-repo" raw) = do
       let mr' = readRepo raw
@@ -921,14 +942,22 @@ ppRemoteRepoSection vals = ppSection "remote-repo" (remoteRepoName vals)
 
 remoteRepoFields :: [FieldDescr RemoteRepo]
 remoteRepoFields =
-    [ FieldDescr { fieldName = "url",
-                   fieldGet = text . show . remoteRepoURI,
-                   fieldSet = \ _ uriString remoteRepo -> maybe
-                          (fail $ "remote-repo: no parse on " ++ show uriString)
-                          (\ uri -> return $ remoteRepo { remoteRepoURI = uri })
-                          (parseURI uriString)
-                 }
+    [ simpleField "url"
+        (text . show)            (parseTokenQ >>= parseURI')
+        remoteRepoURI            (\x repo -> repo { remoteRepoURI = x })
+    , boolField "secure"
+        remoteRepoSecure         (\x repo -> repo { remoteRepoSecure = x })
+    , listField "root-keys"
+        (text . Sec.keyIdString) (Sec.KeyId `fmap` parseTokenQ)
+        remoteRepoRootKeys       (\x repo -> repo { remoteRepoRootKeys = x })
+    , intField "key-threshold"
+        remoteRepoKeyThreshold   (\x repo -> repo { remoteRepoKeyThreshold = x })
     ]
+  where
+    parseURI' uriString =
+      case parseURI uriString of
+        Nothing  -> fail $ "remote-repo: no parse on " ++ show uriString
+        Just uri -> return uri
 
 -- | Fields for the 'haddock' section.
 haddockFlagsFields :: [FieldDescr HaddockFlags]

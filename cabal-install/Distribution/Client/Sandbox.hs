@@ -45,7 +45,7 @@ module Distribution.Client.Sandbox (
 import Distribution.Client.Setup
   ( SandboxFlags(..), ConfigFlags(..), ConfigExFlags(..), InstallFlags(..)
   , GlobalFlags(..), defaultConfigExFlags, defaultInstallFlags
-  , defaultSandboxLocation, globalRepos )
+  , defaultSandboxLocation, withGlobalRepos )
 import Distribution.Client.Sandbox.Timestamp  ( listModifiedDeps
                                               , maybeAddCompilerTimestampRecord
                                               , withAddTimestamps
@@ -605,25 +605,25 @@ reinstallAddSourceDeps verbosity configFlags' configExFlags
   withSandboxPackageInfo verbosity configFlags globalFlags
                          comp platform conf sandboxDir $ \sandboxPkgInfo ->
     unless (null $ modifiedAddSourceDependencies sandboxPkgInfo) $ do
+      withGlobalRepos verbosity globalFlags $ \globalRepos -> do
+        let args :: InstallArgs
+            args = ((configPackageDB' configFlags)
+                   ,globalRepos
+                   ,comp, platform, conf
+                   ,UseSandbox sandboxDir, Just sandboxPkgInfo
+                   ,globalFlags, configFlags, configExFlags, installFlags
+                   ,haddockFlags)
 
-      let args :: InstallArgs
-          args = ((configPackageDB' configFlags)
-                 ,(globalRepos globalFlags)
-                 ,comp, platform, conf
-                 ,UseSandbox sandboxDir, Just sandboxPkgInfo
-                 ,globalFlags, configFlags, configExFlags, installFlags
-                 ,haddockFlags)
+        -- This can actually be replaced by a call to 'install', but we use a
+        -- lower-level API because of layer separation reasons. Additionally, we
+        -- might want to use some lower-level features this in the future.
+        withSandboxBinDirOnSearchPath sandboxDir $ do
+          installContext <- makeInstallContext verbosity args Nothing
+          installPlan    <- foldProgress logMsg die' return =<<
+                            makeInstallPlan verbosity args installContext
 
-      -- This can actually be replaced by a call to 'install', but we use a
-      -- lower-level API because of layer separation reasons. Additionally, we
-      -- might want to use some lower-level features this in the future.
-      withSandboxBinDirOnSearchPath sandboxDir $ do
-        installContext <- makeInstallContext verbosity args Nothing
-        installPlan    <- foldProgress logMsg die' return =<<
-                          makeInstallPlan verbosity args installContext
-
-        processInstallPlan verbosity args installContext installPlan
-        writeIORef retVal ReinstalledSomeDeps
+          processInstallPlan verbosity args installContext installPlan
+          writeIORef retVal ReinstalledSomeDeps
 
   readIORef retVal
 

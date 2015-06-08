@@ -16,7 +16,7 @@
 module Main (main) where
 
 import Distribution.Client.Setup
-         ( GlobalFlags(..), globalCommand, globalRepos
+         ( GlobalFlags(..), globalCommand, withGlobalRepos
          , ConfigFlags(..)
          , ConfigExFlags(..), defaultConfigExFlags, configureExCommand
          , BuildFlags(..), BuildExFlags(..), SkipAddSourceDepsCheck(..)
@@ -319,10 +319,11 @@ configureAction (configFlags, configExFlags) extraArgs globalFlags = do
       (compilerId comp) platform
 
   maybeWithSandboxDirOnSearchPath useSandbox $
-    configure verbosity
-              (configPackageDB' configFlags'')
-              (globalRepos globalFlags')
-              comp platform conf configFlags'' configExFlags' extraArgs
+    withGlobalRepos verbosity globalFlags' $ \globalRepos ->
+      configure verbosity
+                (configPackageDB' configFlags'')
+                globalRepos
+                comp platform conf configFlags'' configExFlags' extraArgs
 
 buildAction :: (BuildFlags, BuildExFlags) -> [String] -> GlobalFlags -> IO ()
 buildAction (buildFlags, buildExFlags) extraArgs globalFlags = do
@@ -726,9 +727,10 @@ installAction (configFlags, configExFlags, installFlags, haddockFlags)
   maybeWithSandboxPackageInfo verbosity configFlags'' globalFlags'
                               comp platform conf useSandbox $ \mSandboxPkgInfo ->
                               maybeWithSandboxDirOnSearchPath useSandbox $
+    withGlobalRepos verbosity globalFlags' $ \globalRepos ->
       install verbosity
               (configPackageDB' configFlags'')
-              (globalRepos globalFlags')
+              globalRepos
               comp platform conf'
               useSandbox mSandboxPkgInfo
               globalFlags' configFlags'' configExFlags'
@@ -883,13 +885,14 @@ listAction listFlags extraArgs globalFlags = do
         }
       globalFlags' = savedGlobalFlags    config `mappend` globalFlags
   (comp, _, conf) <- configCompilerAux' configFlags
-  List.list verbosity
-       (configPackageDB' configFlags)
-       (globalRepos globalFlags')
-       comp
-       conf
-       listFlags
-       extraArgs
+  withGlobalRepos verbosity globalFlags' $ \globalRepos ->
+    List.list verbosity
+         (configPackageDB' configFlags)
+         globalRepos
+         comp
+         conf
+         listFlags
+         extraArgs
 
 infoAction :: InfoFlags -> [String] -> GlobalFlags -> IO ()
 infoAction infoFlags extraArgs globalFlags = do
@@ -904,14 +907,15 @@ infoAction infoFlags extraArgs globalFlags = do
         }
       globalFlags' = savedGlobalFlags    config `mappend` globalFlags
   (comp, _, conf) <- configCompilerAuxEx configFlags
-  List.info verbosity
-       (configPackageDB' configFlags)
-       (globalRepos globalFlags')
-       comp
-       conf
-       globalFlags'
-       infoFlags
-       targets
+  withGlobalRepos verbosity globalFlags' $ \globalRepos ->
+    List.info verbosity
+         (configPackageDB' configFlags)
+         globalRepos
+         comp
+         conf
+         globalFlags'
+         infoFlags
+         targets
 
 updateAction :: Flag Verbosity -> [String] -> GlobalFlags -> IO ()
 updateAction verbosityFlag extraArgs globalFlags = do
@@ -922,7 +926,9 @@ updateAction verbosityFlag extraArgs globalFlags = do
                            (globalFlags { globalRequireSandbox = Flag False })
   let globalFlags' = savedGlobalFlags config `mappend` globalFlags
   transport <- configureTransport verbosity (flagToMaybe (globalHttpTransport globalFlags'))
-  update transport verbosity (globalRepos globalFlags')
+  withGlobalRepos verbosity globalFlags' $ \globalRepos -> do
+    let ignoreExpiry = fromFlagOrDefault False (globalIgnoreExpiry globalFlags)
+    update transport verbosity ignoreExpiry globalRepos
 
 upgradeAction :: (ConfigFlags, ConfigExFlags, InstallFlags, HaddockFlags)
               -> [String] -> GlobalFlags -> IO ()
@@ -947,11 +953,12 @@ fetchAction fetchFlags extraArgs globalFlags = do
   let configFlags  = savedConfigureFlags config
       globalFlags' = savedGlobalFlags config `mappend` globalFlags
   (comp, platform, conf) <- configCompilerAux' configFlags
-  fetch verbosity
-        (configPackageDB' configFlags)
-        (globalRepos globalFlags')
-        comp platform conf globalFlags' fetchFlags
-        targets
+  withGlobalRepos verbosity globalFlags' $ \globalRepos ->
+    fetch verbosity
+          (configPackageDB' configFlags)
+          globalRepos
+          comp platform conf globalFlags' fetchFlags
+          targets
 
 freezeAction :: FreezeFlags -> [String] -> GlobalFlags -> IO ()
 freezeAction freezeFlags _extraArgs globalFlags = do
@@ -964,9 +971,10 @@ freezeAction freezeFlags _extraArgs globalFlags = do
   maybeWithSandboxPackageInfo verbosity configFlags globalFlags'
                               comp platform conf useSandbox $ \mSandboxPkgInfo ->
                               maybeWithSandboxDirOnSearchPath useSandbox $
+    withGlobalRepos verbosity globalFlags' $ \globalRepos ->
       freeze verbosity
             (configPackageDB' configFlags)
-            (globalRepos globalFlags')
+            globalRepos
             comp platform conf
             mSandboxPkgInfo
             globalFlags' freezeFlags
@@ -988,12 +996,13 @@ uploadAction uploadFlags extraArgs globalFlags = do
   transport <- configureTransport verbosity (flagToMaybe (globalHttpTransport globalFlags'))
   if fromFlag (uploadCheck uploadFlags')
     then Upload.check transport verbosity tarfiles
-    else upload transport
-                verbosity
-                (globalRepos globalFlags')
-                (flagToMaybe $ uploadUsername uploadFlags')
-                maybe_password
-                tarfiles
+    else withGlobalRepos verbosity globalFlags' $ \globalRepos ->
+           upload transport
+                  verbosity
+                  globalRepos
+                  (flagToMaybe $ uploadUsername uploadFlags')
+                  maybe_password
+                  tarfiles
   where
     checkTarFiles tarfiles
       | null tarfiles
@@ -1060,9 +1069,10 @@ reportAction reportFlags extraArgs globalFlags = do
   let globalFlags' = savedGlobalFlags config `mappend` globalFlags
       reportFlags' = savedReportFlags config `mappend` reportFlags
 
-  Upload.report verbosity (globalRepos globalFlags')
-    (flagToMaybe $ reportUsername reportFlags')
-    (flagToMaybe $ reportPassword reportFlags')
+  withGlobalRepos verbosity globalFlags' $ \globalRepos ->
+    Upload.report verbosity globalRepos
+      (flagToMaybe $ reportUsername reportFlags')
+      (flagToMaybe $ reportPassword reportFlags')
 
 runAction :: (BuildFlags, BuildExFlags) -> [String] -> GlobalFlags -> IO ()
 runAction (buildFlags, buildExFlags) extraArgs globalFlags = do
@@ -1092,11 +1102,12 @@ getAction getFlags extraArgs globalFlags = do
   targets <- readUserTargets verbosity extraArgs
   config <- loadConfig verbosity (globalConfigFile globalFlags)
   let globalFlags' = savedGlobalFlags config `mappend` globalFlags
-  get verbosity
-    (globalRepos (savedGlobalFlags config))
-    globalFlags'
-    getFlags
-    targets
+  withGlobalRepos verbosity (savedGlobalFlags config) $ \globalRepos ->
+    get verbosity
+        globalRepos
+        globalFlags'
+        getFlags
+        targets
 
 unpackAction :: GetFlags -> [String] -> GlobalFlags -> IO ()
 unpackAction getFlags extraArgs globalFlags = do
@@ -1110,12 +1121,13 @@ initAction initFlags _extraArgs globalFlags = do
   let configFlags  = savedConfigureFlags config
   let globalFlags' = savedGlobalFlags    config `mappend` globalFlags
   (comp, _, conf) <- configCompilerAux' configFlags
-  initCabal verbosity
-            (configPackageDB' configFlags)
-            (globalRepos globalFlags')
-            comp
-            conf
-            initFlags
+  withGlobalRepos verbosity globalFlags' $ \globalRepos ->
+    initCabal verbosity
+              (configPackageDB' configFlags)
+              globalRepos
+              comp
+              conf
+              initFlags
 
 sandboxAction :: SandboxFlags -> [String] -> GlobalFlags -> IO ()
 sandboxAction sandboxFlags extraArgs globalFlags = do
