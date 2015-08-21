@@ -516,6 +516,7 @@ reconfigure verbosity flagDistPref addConfigFlags extraArgs globalFlags
           let distVerbFlags = mempty
                 { configVerbosity = toFlag verbosity
                 , configDistPref  = toFlag distPref
+                , configHcFlavor  = Haste
                 }
               defaultFlags = mappend addConfigFlags distVerbFlags
           notice verbosity
