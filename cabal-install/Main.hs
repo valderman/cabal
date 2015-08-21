@@ -122,6 +122,8 @@ import Distribution.PackageDescription.Parse
          ( readPackageDescription )
 import Distribution.PackageDescription.PrettyPrint
          ( writeGenericPackageDescription )
+import Distribution.Compiler
+         ( CompilerFlavor(Haste) )
 import qualified Distribution.Simple as Simple
 import qualified Distribution.Make as Make
 import Distribution.Simple.Build
@@ -516,7 +518,7 @@ reconfigure verbosity flagDistPref addConfigFlags extraArgs globalFlags
           let distVerbFlags = mempty
                 { configVerbosity = toFlag verbosity
                 , configDistPref  = toFlag distPref
-                , configHcFlavor  = Haste
+                , configHcFlavor  = toFlag Haste
                 }
               defaultFlags = mappend addConfigFlags distVerbFlags
           notice verbosity
