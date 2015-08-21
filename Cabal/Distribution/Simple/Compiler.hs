@@ -286,6 +286,7 @@ ghcSupported key comp =
   case compilerFlavor comp of
     GHC   -> checkProp
     GHCJS -> checkProp
+    Haste -> checkProp
     _     -> False
   where checkProp =
           case M.lookup key (compilerProperties comp) of

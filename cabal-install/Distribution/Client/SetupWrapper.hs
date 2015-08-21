@@ -41,7 +41,7 @@ import Distribution.PackageDescription.Parse
 import Distribution.Simple.Configure
          ( configCompilerEx )
 import Distribution.Compiler
-         ( buildCompilerId, CompilerFlavor(GHC, GHCJS) )
+         ( buildCompilerId, CompilerFlavor(GHC, GHCJS, Haste) )
 import Distribution.Simple.Compiler
          ( Compiler(compilerId), compilerFlavor, PackageDB(..), PackageDBStack )
 import Distribution.Simple.PreProcess
@@ -521,17 +521,21 @@ externalSetupMethod verbosity options pkg bt mkargs = do
                  cabalLibVersion maybeCabalLibInstalledPkgId True
           createDirectoryIfMissingVerbose verbosity True setupCacheDir
           installExecutableFile verbosity src cachedSetupProgFile
-          -- Do not strip if we're using GHCJS, since the result may be a script
-          when (maybe True ((/=GHCJS).compilerFlavor) $ useCompiler options') $
+          -- Do not strip if we're using GHCJS or Haste, since the result may
+          -- be a script
+          when (maybe True ((not.jsComp).compilerFlavor) $ useCompiler options') $
             Strip.stripExe verbosity platform (useProgramConfig options')
               cachedSetupProgFile
     return cachedSetupProgFile
       where
+        jsComp GHCJS          = True
+        jsComp Haste          = True
+        jsComp _              = False
         criticalSection'      = fromMaybe id
                                 (fmap criticalSection $ setupCacheLock options')
 
   -- | If the Setup.hs is out of date wrt the executable then recompile it.
-  -- Currently this is GHC/GHCJS only. It should really be generalised.
+  -- Currently this is GHC/GHCJS/Haste only. It should really be generalised.
   --
   compileSetupExecutable :: SetupScriptOptions
                          -> Version -> Maybe InstalledPackageId -> Bool

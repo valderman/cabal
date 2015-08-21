@@ -94,6 +94,8 @@ module Distribution.Simple.Program (
     , ghcPkgProgram
     , ghcjsProgram
     , ghcjsPkgProgram
+    , hasteProgram
+    , hastePkgProgram
     , lhcProgram
     , lhcPkgProgram
     , hmakeProgram

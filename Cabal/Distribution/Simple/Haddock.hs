@@ -22,6 +22,7 @@ module Distribution.Simple.Haddock (
 
 import qualified Distribution.Simple.GHC   as GHC
 import qualified Distribution.Simple.GHCJS as GHCJS
+import qualified Distribution.Simple.Haste as Haste
 
 -- local
 import Distribution.Package
@@ -289,9 +290,10 @@ componentGhcOptions verbosity lbi bi clbi odir =
   let f = case compilerFlavor (compiler lbi) of
             GHC   -> GHC.componentGhcOptions
             GHCJS -> GHCJS.componentGhcOptions
+            Haste -> Haste.componentGhcOptions
             _     -> error $
                        "Distribution.Simple.Haddock.componentGhcOptions:" ++
-                       "haddock only supports GHC and GHCJS"
+                       "haddock only supports GHC, GHCJS and Haste"
   in f verbosity lbi bi clbi odir
 
 fromLibrary :: Verbosity
@@ -436,7 +438,8 @@ getGhcLibDir verbosity lbi = do
     l <- case compilerFlavor (compiler lbi) of
             GHC   -> GHC.getLibDir   verbosity lbi
             GHCJS -> GHCJS.getLibDir verbosity lbi
-            _     -> error "haddock only supports GHC and GHCJS"
+            Haste -> Haste.getLibDir verbosity lbi
+            _     -> error "haddock only supports GHC, GHCJS and Haste"
     return $ mempty { argGhcLibDir = Flag l }
 
 -- ------------------------------------------------------------------------------

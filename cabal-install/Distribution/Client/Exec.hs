@@ -18,13 +18,14 @@ import Data.Foldable (forM_)
 
 import qualified Distribution.Simple.GHC   as GHC
 import qualified Distribution.Simple.GHCJS as GHCJS
+import qualified Distribution.Simple.Haste as Haste
 
 import Distribution.Client.Sandbox (getSandboxConfigFilePath)
 import Distribution.Client.Sandbox.PackageEnvironment (sandboxPackageDBPath)
 import Distribution.Client.Sandbox.Types              (UseSandbox (..))
 
 import Distribution.Simple.Compiler    (Compiler, CompilerFlavor(..), compilerFlavor)
-import Distribution.Simple.Program     (ghcProgram, ghcjsProgram, lookupProgram)
+import Distribution.Simple.Program     (ghcProgram, ghcjsProgram, hasteProgram, lookupProgram)
 import Distribution.Simple.Program.Db  (ProgramDb, requireProgram, modifyProgramSearchPath)
 import Distribution.Simple.Program.Find (ProgramSearchPathEntry(..))
 import Distribution.Simple.Program.Run (programInvocation, runProgramInvocation)
@@ -85,7 +86,8 @@ sandboxEnvironment verbosity sandboxDir comp platform programDb =
     case compilerFlavor comp of
       GHC   -> env GHC.getGlobalPackageDB   ghcProgram   "GHC_PACKAGE_PATH"
       GHCJS -> env GHCJS.getGlobalPackageDB ghcjsProgram "GHCJS_PACKAGE_PATH"
-      _     -> die "exec only works with GHC and GHCJS"
+      Haste -> env Haste.getGlobalPackageDB hasteProgram "HASTE_PACKAGE_PATH"
+      _     -> die "exec only works with GHC, GHCJS and Haste"
   where
     env getGlobalPackageDB hcProgram packagePathEnvVar = do
         let Just program = lookupProgram hcProgram programDb

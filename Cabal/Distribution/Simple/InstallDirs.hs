@@ -207,6 +207,7 @@ defaultInstallDirs comp userInstall _hasLibs = do
       Windows -> return "$prefix"
       _       -> case comp of
                  LHC | userInstall -> getAppUserDataDirectory "lhc"
+                 Haste             -> getAppUserDataDirectory "haste"
                  _                 -> return ("$prefix" </> "lib")
   return $ fmap toPathTemplate $ InstallDirs {
       prefix       = installPrefix,

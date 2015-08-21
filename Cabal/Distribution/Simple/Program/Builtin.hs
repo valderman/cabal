@@ -20,6 +20,8 @@ module Distribution.Simple.Program.Builtin (
     ghcPkgProgram,
     ghcjsProgram,
     ghcjsPkgProgram,
+    hasteProgram,
+    hastePkgProgram,
     lhcProgram,
     lhcPkgProgram,
     hmakeProgram,
@@ -83,6 +85,8 @@ builtinPrograms =
     , ghcPkgProgram
     , ghcjsProgram
     , ghcjsPkgProgram
+    , hasteProgram
+    , hastePkgProgram
     , haskellSuiteProgram
     , haskellSuitePkgProgram
     , hmakeProgram
@@ -155,6 +159,17 @@ ghcjsPkgProgram = (simpleProgram "ghcjs-pkg") {
       case words str of
         (_:_:_:_:ver:_) -> ver
         _               -> ""
+  }
+
+hasteProgram :: Program
+hasteProgram = (simpleProgram "hastec") {
+    programFindVersion = findProgramVersion "--version" id
+  }
+
+-- note: version is the version number of the GHC version that haste-pkg was built with
+hastePkgProgram :: Program
+hastePkgProgram = (simpleProgram "haste-pkg") {
+    programFindVersion = findProgramVersion "--numeric-ghc-version" id
   }
 
 lhcProgram :: Program

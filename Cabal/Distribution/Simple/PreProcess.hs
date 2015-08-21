@@ -454,6 +454,7 @@ ppHsc2hs bi lbi =
     packageHacks = case compilerFlavor (compiler lbi) of
       GHC   -> hackRtsPackage
       GHCJS -> hackRtsPackage
+      Haste -> hackRtsPackage
       _     -> id
     -- We don't link in the actual Haskell libraries of our dependencies, so
     -- the -u flags in the ldOptions of the rts package mean linking fails on
@@ -533,6 +534,13 @@ platformDefines lbi =
       ["-D" ++ arch ++ "_BUILD_ARCH=1"] ++
       map (\os'   -> "-D" ++ os'   ++ "_HOST_OS=1")   osStr ++
       map (\arch' -> "-D" ++ arch' ++ "_HOST_ARCH=1") archStr
+    Haste ->
+      compatGlasgowHaskell ++
+      ["-D__HASTE__=" ++ versionInt version] ++
+      ["-D" ++ os   ++ "_BUILD_OS=1"] ++
+      ["-D" ++ arch ++ "_BUILD_ARCH=1"] ++
+      map (\os'   -> "-D" ++ os'   ++ "_HOST_OS=1")   osStr ++
+      map (\arch' -> "-D" ++ arch' ++ "_HOST_ARCH=1") archStr
     JHC  -> ["-D__JHC__=" ++ versionInt version]
     HaskellSuite {} ->
       ["-D__HASKELL_SUITE__"] ++
@@ -604,6 +612,7 @@ ppHappy _ lbi = pp { platformIndependent = True }
         hc = compilerFlavor (compiler lbi)
         hcFlags GHC = ["-agc"]
         hcFlags GHCJS = ["-agc"]
+        hcFlags Haste = ["-agc"]
         hcFlags _ = []
 
 ppAlex :: BuildInfo -> LocalBuildInfo -> PreProcessor
@@ -612,6 +621,7 @@ ppAlex _ lbi = pp { platformIndependent = True }
         hc = compilerFlavor (compiler lbi)
         hcFlags GHC = ["-g"]
         hcFlags GHCJS = ["-g"]
+        hcFlags Haste = ["-g"]
         hcFlags _ = []
 
 standardPP :: LocalBuildInfo -> Program -> [String] -> PreProcessor

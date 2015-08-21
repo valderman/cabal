@@ -11,7 +11,8 @@
 
 module Distribution.Simple.GHC.ImplInfo (
         GhcImplInfo(..), getImplInfo,
-        ghcVersionImplInfo, ghcjsVersionImplInfo, lhcVersionImplInfo
+        ghcVersionImplInfo, ghcjsVersionImplInfo, lhcVersionImplInfo,
+        hasteVersionImplInfo
         ) where
 
 import Distribution.Simple.Compiler
@@ -61,8 +62,12 @@ getImplInfo comp =
               Just ghcVer -> ghcjsVersionImplInfo (compilerVersion comp) ghcVer
               _  -> error ("Distribution.Simple.GHC.Props.getImplProps: " ++
                            "could not find GHC version for GHCJS compiler")
+    Haste -> case compilerCompatVersion GHC comp of
+              Just ghcVer -> ghcjsVersionImplInfo (compilerVersion comp) ghcVer
+              _  -> error ("Distribution.Simple.GHC.Props.getImplProps: " ++
+                           "could not find GHC version for GHCJS compiler")
     x     -> error ("Distribution.Simple.GHC.Props.getImplProps only works" ++
-                    "for GHC-like compilers (GHC, GHCJS, LHC)" ++
+                    "for GHC-like compilers (GHC, GHCJS, LHC, Haste)" ++
                     ", but found " ++ show x)
 
 ghcVersionImplInfo :: Version -> GhcImplInfo
@@ -109,3 +114,24 @@ ghcjsVersionImplInfo _ghcjsVer _ghcVer = GhcImplInfo
 
 lhcVersionImplInfo :: Version -> GhcImplInfo
 lhcVersionImplInfo = ghcVersionImplInfo
+
+hasteVersionImplInfo :: Version -> GhcImplInfo
+hasteVersionImplInfo _ = GhcImplInfo
+  { hasCcOdirBug         = False
+  , flagInfoLanguages    = True
+  , fakeRecordPuns       = False
+  , flagStubdir          = True
+  , flagOutputDir        = True
+  , noExtInSplitSuffix   = False
+  , flagFfiIncludes      = False
+  , flagBuildingCabalPkg = True
+  , flagPackageId        = True
+  , separateGccMingw     = False
+  , supportsHaskell2010  = True
+  , reportsNoExt         = True
+  , alwaysNondecIndent   = False
+  , flagGhciScript       = True
+  , flagProfAuto         = True
+  , flagPackageConf      = False
+  , flagDebugInfo        = False
+  }

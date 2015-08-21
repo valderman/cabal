@@ -11,7 +11,6 @@
 -- \"@.\/setup install@\" and \"@.\/setup copy@\" actions. It moves files into
 -- place based on the prefix argument. It does the generic bits and then calls
 -- compiler-specific functions to do the rest.
-
 module Distribution.Simple.Install (
         install,
   ) where
@@ -34,6 +33,7 @@ import Distribution.Simple.Setup (CopyFlags(..), fromFlag)
 
 import qualified Distribution.Simple.GHC   as GHC
 import qualified Distribution.Simple.GHCJS as GHCJS
+import qualified Distribution.Simple.Haste as Haste
 import qualified Distribution.Simple.JHC   as JHC
 import qualified Distribution.Simple.LHC   as LHC
 import qualified Distribution.Simple.UHC   as UHC
@@ -137,6 +137,10 @@ install pkg_descr lbi flags = do
                   GHCJS.installLib verbosity lbi libPref dynlibPref buildPref pkg_descr
                 withExe pkg_descr $
                   GHCJS.installExe verbosity lbi installDirs buildPref (progPrefixPref, progSuffixPref) pkg_descr
+     Haste-> do withLibLBI pkg_descr lbi $
+                  Haste.installLib verbosity lbi libPref dynlibPref buildPref pkg_descr
+                withExe pkg_descr $
+                  Haste.installExe verbosity lbi installDirs buildPref (progPrefixPref, progSuffixPref) pkg_descr
      LHC  -> do withLibLBI pkg_descr lbi $
                   LHC.installLib verbosity lbi libPref dynlibPref buildPref pkg_descr
                 withExe pkg_descr $

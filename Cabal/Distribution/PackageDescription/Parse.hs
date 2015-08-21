@@ -477,6 +477,8 @@ binfoFieldDescrs =
            options            (\path  binfo -> binfo{options=path})
  , optsField   "ghcjs-options" GHCJS
            options            (\path  binfo -> binfo{options=path})
+ , optsField   "haste-options" Haste
+           options            (\path  binfo -> binfo{options=path})
  , optsField   "jhc-options"  JHC
            options            (\path  binfo -> binfo{options=path})
 
