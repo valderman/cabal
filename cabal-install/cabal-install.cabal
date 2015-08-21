@@ -42,9 +42,9 @@ Flag network-uri
   description:  Get Network.URI from the network-uri package
   default:      True
 
-executable cabal
+executable haste-cabal
     main-is:        Main.hs
-    ghc-options:    -Wall -fwarn-tabs
+    ghc-options:    -Wall -fwarn-tabs -static -optl-static
     other-modules:
         Distribution.Client.BuildReports.Anonymous
         Distribution.Client.BuildReports.Storage

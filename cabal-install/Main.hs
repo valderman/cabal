@@ -184,7 +184,10 @@ main = do
   relaxEncodingErrors stdout
   relaxEncodingErrors stderr
 #endif
-  getArgs >>= mainWorker
+  args <- getArgs
+  mainWorker $ if "install" `elem` args || "configure" `elem` args
+                 then "--haste" : args
+                 else args
 
 mainWorker :: [String] -> IO ()
 mainWorker args = topHandler $
