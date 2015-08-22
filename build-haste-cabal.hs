@@ -32,6 +32,7 @@ main = void . shell $ do
 launcher :: String
 launcher = unlines [
     "#!/bin/bash",
-    "export LD_LIBRARY_PATH=`dirname $0`",
-    "exec ./haste-cabal.bin $@"
+    "DIR=\"$(dirname $0)\"",
+    "export LD_LIBRARY_PATH=$DIR",
+    "exec $DIR/haste-cabal.bin $@"
   ]
