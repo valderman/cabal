@@ -23,16 +23,6 @@ main = void . shell $ do
     inDirectory "haste-cabal" $ do
       mapM_ (\f -> cp f (takeFileName f)) libs
       cp "../cabal-install/dist/build/haste-cabal/haste-cabal" "haste-cabal.bin"
-      () <- file "haste-cabal" launcher
-      liftIO $ copyPermissions "haste-cabal.bin" "haste-cabal"
   where
     specials = ["libgmp", "libffi"]
     shouldBeIncluded (l:_) = any (and . zipWith (==) l) specials
-
-launcher :: String
-launcher = unlines [
-    "#!/bin/bash",
-    "DIR=\"$(dirname $0)\"",
-    "export LD_LIBRARY_PATH=$DIR",
-    "exec $DIR/haste-cabal.bin $@"
-  ]
