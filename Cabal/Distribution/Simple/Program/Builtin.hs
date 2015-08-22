@@ -48,7 +48,8 @@ module Distribution.Simple.Program.Builtin (
   ) where
 
 import Distribution.Simple.Program.Find
-         ( findProgramOnSearchPath )
+         ( ProgramSearchPath, ProgramSearchPathEntry (..)
+         , findProgramOnSearchPath )
 import Distribution.Simple.Program.Internal
          ( stripExtractVersion )
 import Distribution.Simple.Program.Run
@@ -60,7 +61,7 @@ import Distribution.Simple.Utils
 import Distribution.Compat.Exception
          ( catchIO )
 import Distribution.Verbosity
-         ( lessVerbose )
+         ( Verbosity, lessVerbose )
 import Distribution.Version
          ( Version(..), withinRange, earlierVersion, laterVersion
          , intersectVersionRanges )
@@ -70,6 +71,11 @@ import Data.Char
 import Data.List
          ( isInfixOf )
 import qualified Data.Map as Map
+
+import System.Environment
+         ( getExecutablePath )
+import System.FilePath
+         ( takeDirectory )
 
 -- ------------------------------------------------------------
 -- * Known programs
@@ -161,15 +167,24 @@ ghcjsPkgProgram = (simpleProgram "ghcjs-pkg") {
         _               -> ""
   }
 
+findHasteProgram :: Verbosity -> ProgramSearchPath -> FilePath
+                 -> IO (Maybe FilePath)
+findHasteProgram v p name = do
+  me <- getExecutablePath
+  let mypath = ProgramSearchPathDir (takeDirectory me)
+  findProgramOnSearchPath v (mypath : p) name
+
 hasteProgram :: Program
 hasteProgram = (simpleProgram "hastec") {
-    programFindVersion = findProgramVersion "--version" id
+    programFindVersion  = findProgramVersion "--version" id,
+    programFindLocation = \v p -> findHasteProgram v p "hastec"
   }
 
 -- note: version is the version number of the GHC version that haste-pkg was built with
 hastePkgProgram :: Program
 hastePkgProgram = (simpleProgram "haste-pkg") {
-    programFindVersion = findProgramVersion "--numeric-ghc-version" id
+    programFindVersion  = findProgramVersion "--numeric-ghc-version" id,
+    programFindLocation = \v p -> findHasteProgram v p "haste-pkg"
   }
 
 lhcProgram :: Program
