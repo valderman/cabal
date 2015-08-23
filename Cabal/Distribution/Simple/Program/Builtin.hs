@@ -75,7 +75,9 @@ import qualified Data.Map as Map
 import System.Environment
          ( getExecutablePath )
 import System.FilePath
-         ( takeDirectory )
+         ( takeDirectory, (</>) )
+import System.Info
+         ( os )
 
 -- ------------------------------------------------------------
 -- * Known programs
@@ -171,8 +173,10 @@ findHasteProgram :: Verbosity -> ProgramSearchPath -> FilePath
                  -> IO (Maybe FilePath)
 findHasteProgram v p name = do
   me <- getExecutablePath
-  let mypath = ProgramSearchPathDir (takeDirectory me)
-  findProgramOnSearchPath v (mypath : p) name
+  let mypath
+        | os == "linux" = takeDirectory (takeDirectory me) </> "bin"
+        | otherwise     = takeDirectory me
+  findProgramOnSearchPath v (ProgramSearchPathDir mypath : p) name
 
 hasteProgram :: Program
 hasteProgram = (simpleProgram "hastec") {
