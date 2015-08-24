@@ -70,7 +70,7 @@ import qualified Data.Map as M  ( fromList  )
 #if __GLASGOW_HASKELL__ < 710
 import Data.Monoid              ( Monoid(..) )
 #endif
-import System.Directory         ( doesFileExist, renameFile )
+import System.Directory         ( doesFileExist )
 import System.FilePath          ( (</>), (<.>), takeExtension,
                                   takeDirectory, replaceExtension,
                                   splitExtension )
@@ -290,8 +290,6 @@ buildOrReplLib :: Bool -> Verbosity  -> Cabal.Flag (Maybe Int)
                -> Library            -> ComponentLocalBuildInfo -> IO ()
 buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
   let libName@(LibraryName cname) = componentLibraryName clbi
-      libNameWithoutVersion =
-        LibraryName . unPackageName . pkgName $ package pkg_descr
       libTargetDir = buildDir lbi
       whenVanillaLib forceVanilla =
         when (not forRepl && (forceVanilla || withVanillaLib lbi))
@@ -303,6 +301,8 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
       implInfo = getImplInfo comp
       hole_insts = map (\(k,(p,n)) -> (k,(InstalledPackageInfo.packageKey p,n)))
                        (instantiatedWith lbi)
+      vanillaLibFilePath = libTargetDir </> mkLibName libName
+      versionedLibFilePath = toJSLibName vanillaLibFilePath
 
   (hasteProg, _) <- requireProgram verbosity hasteProgram (withPrograms lbi)
   let runHasteProg        = runGHC verbosity hasteProg comp
@@ -330,7 +330,7 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
       jsLibOpts   = mempty {
                       ghcOptExtra = toNubListR $
                                       ["--with-js=" ++ intercalate "," jsSrcs,
-                                       "--link-jslib"]
+                                       "--link-jslib=" ++ versionedLibFilePath]
                     }
       vanillaOptsNoJsLib = baseOpts `mappend` mempty {
                       ghcOptMode         = toFlag GhcModeMake,
@@ -411,21 +411,7 @@ buildOrReplLib forRepl verbosity numJobs pkg_descr lbi lib clbi = do
   unless (null (libModules lib)) $
      ifReplLib (runHasteProg replOpts)
 
-  -- link:
-  when (not forRepl) $ do
-    info verbosity "Linking..."
-    hObjs     <- Internal.getHaskellObjects implInfo lib lbi
-                      libTargetDir objExtension True
-    unless (null hObjs && null cObjs) $ do
-      let vanillaLibFilePath = libTargetDir </> mkLibName libName
-          unversionedLibFilePath =
-            toJSLibName $ libTargetDir </> mkLibName libNameWithoutVersion
-          versionedLibFilePath = toJSLibName vanillaLibFilePath
-
-      versionedLibExists <- doesFileExist versionedLibFilePath
-      unversionedLibExists <- doesFileExist unversionedLibFilePath
-      when (unversionedLibExists && not versionedLibExists) $ do
-        renameFile unversionedLibFilePath versionedLibFilePath
+  -- Haste does linking automatically; no need for a separate link step
 
 -- | Start a REPL without loading any source files.
 startInterpreter :: Verbosity -> ProgramConfiguration -> Compiler
