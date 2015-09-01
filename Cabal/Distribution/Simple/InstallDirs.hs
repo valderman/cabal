@@ -204,7 +204,9 @@ defaultInstallDirs comp userInstall _hasLibs = do
            _       -> return "/usr/local"
   installLibDir <-
       case buildOS of
-      Windows -> return "$prefix"
+      Windows -> case comp of
+                 Haste -> getAppUserDataDirectory "haste"
+                 _     -> return "$prefix"
       _       -> case comp of
                  LHC | userInstall -> getAppUserDataDirectory "lhc"
                  Haste             -> getAppUserDataDirectory "haste"
