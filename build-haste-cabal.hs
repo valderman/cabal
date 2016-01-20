@@ -1,5 +1,4 @@
 import Control.Applicative
-import Control.Monad
 import Control.Shell
 import System.Directory (copyPermissions)
 
