@@ -4,15 +4,15 @@ import System.Directory (copyPermissions)
 
 main = void . shell $ do
     -- Build library and executable
-    inDirectory "Cabal" $ run_ "cabal" ["install"] ""
+    inDirectory "Cabal" $ run "cabal" ["install"]
     libs <- inDirectory "cabal-install" $ do
-      run_ "cabal" ["configure"] ""
-      run_ "cabal" ["build"] ""
+      run "cabal" ["configure"]
+      run "cabal" ["build"]
 
       -- Find libraries to bundle
       inDirectory "dist/build/haste-cabal" $ do
-        run_ "strip" ["-s", "haste-cabal"] ""
-        libs <- map words . lines <$> run "ldd" ["haste-cabal"] ""
+        run "strip" ["-s", "haste-cabal"]
+        libs <- map words . lines <$> capture (run "ldd" ["haste-cabal"])
         return $ map (!! 2) $ filter shouldBeIncluded libs
 
     -- Prepare haste-cabal bundle
