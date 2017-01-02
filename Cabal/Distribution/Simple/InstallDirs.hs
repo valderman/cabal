@@ -197,7 +197,7 @@ defaultInstallDirs :: CompilerFlavor -> Bool -> Bool -> IO InstallDirTemplates
 defaultInstallDirs comp userInstall _hasLibs = do
   installPrefix <-
       if userInstall
-      then getAppUserDataDirectory "cabal"
+      then getAppUserDataDirectory "haste-cabal"
       else case buildOS of
            Windows -> do windowsProgramFilesDir <- getWindowsProgramFilesDir
                          return (windowsProgramFilesDir </> "Haskell")
