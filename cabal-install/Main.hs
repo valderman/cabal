@@ -188,7 +188,7 @@ main = do
 #endif
   args <- getArgs
   mainWorker $ if "install" `elem` args || "configure" `elem` args
-                 then args ++ ["--haste"]
+                 then args ++ ["--haste", "-fhaste", "-fhaste-inst"]
                  else args
 
 mainWorker :: [String] -> IO ()
